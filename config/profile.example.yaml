@@ -1,0 +1,24 @@
+education:
+  major: 法学
+  grade: 大三
+
+preferred_locations:
+  - 东莞
+  - 广州
+  - 深圳
+
+remote_allowed: true
+
+preferred_directions:
+  - 律师事务所
+  - 涉外法律
+  - 企业法务
+  - 合规
+
+availability:
+  max_days_per_week: 3
+
+skills:
+  - CET-4
+  - CET-6
+  - 初级会计
