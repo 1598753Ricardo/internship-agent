@@ -25,6 +25,8 @@ class Job:
     deadline: date | str | None
     published_at: date | str | None
     collected_at: datetime | str | None
+    source_job_id: str | None = None
+    is_active: bool | None = None
     raw_text: str = ""
     source_type: SourceType = "unknown"
     direction: str | None = None

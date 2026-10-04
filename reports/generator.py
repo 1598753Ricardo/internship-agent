@@ -28,6 +28,7 @@ def generate_report(jobs: list[Job], collected_count: int, output_path: Path) ->
             "### 已知信息", "",
         ])
         known = [
+            f"岗位状态：{'可投递' if job.is_active else '已下线'}" if job.is_active is not None else None,
             f"地点：{job.location}" if job.location else None,
             f"远程安排：{'支持' if job.remote else '不支持'}" if job.remote is not None else None,
             f"每周天数：{job.internship_days_per_week}天" if job.internship_days_per_week is not None else None,

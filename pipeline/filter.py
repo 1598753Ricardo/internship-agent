@@ -17,6 +17,8 @@ def filter_jobs(jobs: list[Job], profile: dict, today: date | None = None) -> li
     accepted: list[Job] = []
 
     for job in jobs:
+        if job.is_active is False:
+            continue
         if job.deadline is not None and job.deadline < today:
             continue
         if job.required_majors and not any(

@@ -1,8 +1,10 @@
+import argparse
 from pathlib import Path
 
 import yaml
 
 from collectors.mock_collector import MockCollector
+from collectors.shixiseng import ShixisengCollector
 from pipeline.deduplicate import deduplicate_jobs
 from pipeline.filter import filter_jobs
 from pipeline.normalize import normalize_jobs
@@ -46,8 +48,14 @@ def load_profile() -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate an internship recommendation report")
+    parser.add_argument("--source", choices=("shixiseng", "mock"), default="shixiseng")
+    parser.add_argument("--max-jobs", type=int, default=30, help="Maximum Shixiseng detail pages to fetch")
+    args = parser.parse_args()
+
     profile = load_profile()
-    jobs = MockCollector().collect()
+    collector = MockCollector() if args.source == "mock" else ShixisengCollector(max_jobs=args.max_jobs)
+    jobs = collector.collect()
     collected_count = len(jobs)
     print(f"[collect] {collected_count} jobs")
 

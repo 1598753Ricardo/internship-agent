@@ -19,6 +19,10 @@ def clean_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def clean_multiline_text(value: str | None) -> str:
+    return "\n".join(line for raw_line in (value or "").splitlines() if (line := clean_text(raw_line)))
+
+
 def normalize_city(value: str | None) -> str:
     city = clean_text(value)
     return CITY_ALIASES.get(city, city)
@@ -66,7 +70,7 @@ def normalize_job(job: Job) -> Job:
     if not clean_text(job.id) or not title or not company:
         raise ValueError("missing id, title, or company")
 
-    raw_text = clean_text(job.raw_text)
+    raw_text = clean_multiline_text(job.raw_text)
     quality = list(job.data_quality)
     if not raw_text:
         raise ValueError("missing raw_text; cannot verify job facts")
@@ -99,9 +103,20 @@ def normalize_job(job: Job) -> Job:
         remote = None
 
     days = job.internship_days_per_week
-    if days is not None and f"每周{days}天" not in raw_text:
+    day_supported = days is not None and bool(re.search(
+        rf"每周\D{{0,5}}{days}\s*天|{days}\s*天\s*[／/]\s*周", raw_text
+    ))
+    if days is not None and not day_supported:
         quality.append(f"每周天数缺少原文依据：{days}")
         days = None
+
+    is_active = job.is_active
+    if is_active is False and not any(mark in raw_text for mark in ("当前职位已下线", "该职位已下线", "职位已下线")):
+        quality.append("下线状态缺少原文依据")
+        is_active = None
+    elif is_active is True and not any(mark in raw_text for mark in ("投个简历", "立即投递", "投递简历", "申请职位")):
+        quality.append("可投递状态缺少原文依据")
+        is_active = None
 
     def safe_date(value: date | str | None, field_name: str) -> date | None:
         if value is None or value == "":
@@ -157,6 +172,7 @@ def normalize_job(job: Job) -> Job:
         deadline=safe_date(job.deadline, "截止日期"),
         published_at=safe_date(job.published_at, "发布日期"),
         collected_at=collected_at, source_type=source_type, direction=direction,
+        is_active=is_active,
         business_tags=business_tags, task_tags=task_tags,
         evidence=list(dict.fromkeys([*supplied_evidence, *tag_evidence])),
         mentor=supported(job.mentor, "导师安排"), retention=supported(job.retention, "留用机会"),
@@ -175,6 +191,7 @@ def normalize_job(job: Job) -> Job:
             ("业务方向", not result.business_tags and not result.direction),
             ("岗位任务", not result.task_tags),
             ("信息来源类型", result.source_type == "unknown"),
+            ("岗位状态", result.is_active is None),
             ("岗位原文", not result.raw_text), ("有效岗位链接", not result.source_url),
         ) if missing
     ]
