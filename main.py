@@ -21,10 +21,27 @@ def load_profile() -> dict:
         profile = yaml.safe_load(file)
     if not isinstance(profile, dict):
         raise ValueError("config/profile.yaml must contain a YAML mapping")
-    required = {"education", "preferred_locations", "remote_allowed", "preferred_directions", "availability", "skills"}
+    required = {"education", "skills", "background", "preferred_directions", "location", "availability", "preferences"}
     missing = required - profile.keys()
     if missing:
-        raise ValueError(f"Missing profile settings: {', '.join(sorted(missing))}")
+        raise ValueError(
+            f"Missing v0.2 profile settings: {', '.join(sorted(missing))}. "
+            "Update config/profile.yaml using config/profile.example.yaml."
+        )
+    try:
+        profile["education"]["major"]
+        profile["education"]["grade"]
+        profile["education"]["degree"]
+        profile["preferred_directions"]["high"]
+        profile["preferred_directions"]["medium"]
+        profile["location"]["preferred"]
+        profile["location"]["acceptable"]
+        profile["location"]["remote_allowed"]
+        profile["availability"]["preferred_days_per_week"]
+        profile["availability"]["max_days_per_week"]
+        profile["preferences"]["avoid"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"Invalid v0.2 profile setting: {exc}") from exc
     return profile
 
 

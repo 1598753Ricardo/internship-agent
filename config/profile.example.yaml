@@ -1,24 +1,47 @@
 education:
   major: 法学
   grade: 大三
-
-preferred_locations:
-  - 东莞
-  - 广州
-  - 深圳
-
-remote_allowed: true
-
-preferred_directions:
-  - 律师事务所
-  - 涉外法律
-  - 企业法务
-  - 合规
-
-availability:
-  max_days_per_week: 3
+  degree: 本科
 
 skills:
   - CET-4
   - CET-6
   - 初级会计
+
+background:
+  - 法学卓越班
+  - 涉外法治培养
+  - ICC国际仲裁比赛
+  - 律所实习经历
+
+preferred_directions:
+  high:
+    - 涉外法律
+    - 国际仲裁
+    - 跨境业务
+    - 企业法务
+    - 合规
+  medium:
+    - 商事诉讼
+    - 公司业务
+    - 知识产权
+    - 资本市场
+    - 并购
+
+location:
+  preferred:
+    - 东莞
+  acceptable:
+    - 广州
+    - 深圳
+  remote_allowed: true
+
+availability:
+  preferred_days_per_week: 2
+  max_days_per_week: 3
+
+preferences:
+  avoid:
+    - 纯行政
+    - 纯文员
+    - 纯销售

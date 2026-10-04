@@ -1,3 +1,6 @@
+"""Evidence-bearing synthetic postings for the local pipeline."""
+
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 from collectors.base import BaseCollector
@@ -8,52 +11,113 @@ class MockCollector(BaseCollector):
     def collect(self) -> list[Job]:
         today = date.today()
         now = datetime.now().astimezone()
+        active_deadline = (today + timedelta(days=20)).isoformat()
+        expired_deadline = (today - timedelta(days=1)).isoformat()
 
-        def job(
-            job_id: str,
-            title: str,
-            company: str,
-            location: str,
-            direction: str,
-            *,
-            remote: bool = False,
-            days: int | None = 3,
-            deadline_offset: int = 20,
-            required_majors: list[str] | None = None,
-            required_skills: list[str] | None = None,
-            education: str = "本科及以上",
-            description: str = "协助团队开展日常实习工作。",
-        ) -> Job:
+        def posting(job_id: str, raw_text: str, **fields: object) -> Job:
             return Job(
                 id=job_id,
-                title=title,
-                company=company,
-                location=location,
-                remote=remote,
                 source="mock",
+                source_type="unknown",
                 source_url=f"https://example.com/jobs/{job_id}#details",
-                description=description,
-                requirements=["法学相关专业优先"] if required_majors is None else ["相关专业要求见岗位信息"],
-                education=education,
-                internship_days_per_week=days,
-                internship_duration="3个月",
-                deadline=today + timedelta(days=deadline_offset),
-                published_at=today - timedelta(days=2),
+                raw_text=raw_text,
+                description=raw_text,
+                requirements=[],
                 collected_at=now,
-                direction=direction,
-                required_majors=required_majors or [],
-                required_skills=required_skills or [],
+                **fields,
             )
 
+        foreign = posting(
+            "foreign-law",
+            f"南方涉外律师事务所｜涉外法律实习生。地点：东莞市；不支持远程，需现场到岗；每周2天；实习3个月；截止日期：{active_deadline}。"
+            "要求：法学专业，本科及以上，大三或大四，CET-6。"
+            "业务：涉外法律、跨境业务。工作：法律检索、合同审查、英文法律工作、文书起草。",
+            title="涉外法律实习生", company="南方涉外律师事务所", location="东莞市", remote=False,
+            education="本科及以上", required_majors=["法学"], required_grades=["大三", "大四"],
+            required_skills=["CET-6"], internship_days_per_week=2, internship_duration="3个月",
+            deadline=active_deadline, published_at=None, direction="涉外法律",
+        )
         return [
-            job("foreign-law", "涉外法律实习生", "南方涉外律师事务所", " 广州市 ", "涉外法律", remote=True, required_majors=["法学"], required_skills=["CET-6"], description="协助跨境合同审查和英文法律检索。"),
-            job("law-firm", "律师助理实习生", "岭南律师事务所", "东莞市", "律师事务所", required_majors=["法学"], required_skills=["CET-4", "法律检索"], description="协助诉讼材料整理和法律检索。"),
-            job("corporate-law", "企业法务实习生", "湾区科技", "深圳", "企业法务", required_majors=["法学"], required_skills=["CET-4"], description="协助合同审核和公司治理事务。"),
-            job("compliance", "合规实习生", "南粤金融", "广州", "合规", required_majors=["法学", "会计学"], required_skills=["初级会计"], description="协助内控和合规资料整理。"),
-            job("remote-law", "远程法律研究实习生", "北方研究院", "北京", "涉外法律", remote=True, required_majors=["法学"], required_skills=["CET-6"], description="远程参与英文法规和案例研究。"),
-            job("five-days", "律所实习生", "珠江律师事务所", "广州", "律师事务所", days=5, required_majors=["法学"], description="每周需到岗五天，协助团队办理案件。"),
-            job("wrong-city", "法律实习生", "海河律师事务所", "天津", "律师事务所", required_majors=["法学"]),
-            job("expired", "法务实习生", "过期招聘公司", "深圳", "企业法务", deadline_offset=-1, required_majors=["法学"]),
-            job("unrelated", "算法工程实习生", "智算科技", "广州", "人工智能", required_majors=["计算机科学"], required_skills=["Python"], description="训练和部署机器学习模型。"),
-            job("foreign-law-copy", " 涉外法律实习生 ", "南方涉外律师事务所", "广州", "涉外法律", required_majors=["法学"], required_skills=["CET-6"]),
+            foreign,
+            posting(
+                "arbitration",
+                "华南仲裁律师事务所｜国际仲裁实习生。地点：广州市；不支持远程，需现场到岗；每周3天。"
+                "要求：法学专业，本科及以上，CET-6。"
+                "业务：国际仲裁。工作：仲裁材料整理、英文法律工作、法律检索。",
+                title="国际仲裁实习生", company="华南仲裁律师事务所", location="广州市", remote=False,
+                education="本科及以上", required_majors=["法学"], required_skills=["CET-6"],
+                internship_days_per_week=3, internship_duration=None, deadline=None, published_at=None,
+                direction="国际仲裁",
+            ),
+            posting(
+                "corporate-law",
+                "湾区科技｜企业法务实习生。地点：深圳市；不支持远程，需现场到岗；每周2天。"
+                "要求：法学专业，本科及以上，CET-4。"
+                "业务：企业法务。工作：合同审查、尽职调查、文书起草。",
+                title="企业法务实习生", company="湾区科技", location="深圳市", remote=False,
+                education="本科及以上", required_majors=["法学"], required_skills=["CET-4"],
+                internship_days_per_week=2, internship_duration=None, deadline=None, published_at=None,
+                direction="企业法务",
+            ),
+            posting(
+                "compliance",
+                "南粤金融｜合规实习生。地点：广州；不支持远程，需现场到岗；每周3天。"
+                "要求：法学或会计学专业，本科及以上，初级会计。"
+                "业务：合规。工作：法规研究、尽职调查。",
+                title="合规实习生", company="南粤金融", location="广州", remote=False,
+                education="本科及以上", required_majors=["法学", "会计学"], required_skills=["初级会计"],
+                internship_days_per_week=3, internship_duration=None, deadline=None, published_at=None,
+                direction="合规",
+            ),
+            posting(
+                "unknown-days",
+                "岭南律师事务所｜商事诉讼实习生。地点：东莞；不支持远程，需现场到岗。"
+                "要求：法学专业。业务：商事诉讼。工作：诉讼材料整理、文书起草、法律检索。",
+                title="商事诉讼实习生", company="岭南律师事务所", location="东莞", remote=False,
+                education=None, required_majors=["法学"], internship_days_per_week=None,
+                internship_duration=None, deadline=None, published_at=None, direction="商事诉讼",
+            ),
+            posting(
+                "remote-law",
+                "北方研究院｜远程法律研究实习生。地点：北京；支持远程。"
+                "要求：法学专业，CET-6。业务：涉外法律。"
+                "工作：法规研究、英文法律工作、法律检索。",
+                title="远程法律研究实习生", company="北方研究院", location="北京", remote=True,
+                education=None, required_majors=["法学"], required_skills=["CET-6"],
+                internship_days_per_week=None, internship_duration=None, deadline=None,
+                published_at=None, direction="涉外法律",
+            ),
+            posting(
+                "five-days",
+                "珠江企业｜企业法务实习生。地点：广州；不支持远程，需现场到岗；每周5天。"
+                "要求：法学专业，本科及以上。业务：企业法务。工作：合同审查、法律检索。",
+                title="企业法务实习生", company="珠江企业", location="广州", remote=False,
+                education="本科及以上", required_majors=["法学"], internship_days_per_week=5,
+                internship_duration=None, deadline=None, published_at=None, direction="企业法务",
+            ),
+            posting(
+                "wrong-city",
+                "海河律师事务所｜商事诉讼实习生。地点：天津；不支持远程，需现场到岗；每周2天。"
+                "要求：法学专业。业务：商事诉讼。工作：诉讼。",
+                title="商事诉讼实习生", company="海河律师事务所", location="天津", remote=False,
+                education=None, required_majors=["法学"], internship_days_per_week=2,
+                internship_duration=None, deadline=None, published_at=None, direction="商事诉讼",
+            ),
+            posting(
+                "expired",
+                f"过期招聘公司｜法务实习生。地点：深圳；不支持远程，需现场到岗；每周2天；截止日期：{expired_deadline}。"
+                "要求：法学专业。业务：企业法务。工作：合同审查。",
+                title="法务实习生", company="过期招聘公司", location="深圳", remote=False,
+                education=None, required_majors=["法学"], internship_days_per_week=2,
+                internship_duration=None, deadline=expired_deadline, published_at=None, direction="企业法务",
+            ),
+            posting(
+                "unrelated",
+                "智算科技｜算法工程实习生。地点：广州；不支持远程，需现场到岗；每周2天。"
+                "要求：计算机科学专业，Python。工作：机器学习模型训练。",
+                title="算法工程实习生", company="智算科技", location="广州", remote=False,
+                education=None, required_majors=["计算机科学"], required_skills=["Python"],
+                internship_days_per_week=2, internship_duration=None, deadline=None, published_at=None,
+            ),
+            replace(foreign, id="foreign-law-copy", title=" 涉外法律实习生 ", location="东莞", source_url="https://example.com/jobs/foreign-law-copy"),
         ]
