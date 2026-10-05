@@ -5,7 +5,7 @@ import random
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -24,6 +24,7 @@ CITIES = ("东莞", "广州", "深圳")
 EDUCATION = {"本科", "本科及以上", "硕士", "硕士及以上", "不限"}
 OFFLINE_MARKERS = ("当前职位已下线", "该职位已下线", "职位已下线")
 APPLY_MARKERS = ("投个简历", "立即投递", "投递简历", "申请职位")
+DEADLINE_PATTERN = re.compile(r"截止日期\s*[:：]\s*(\d{4}-\d{2}-\d{2})(?!\d)")
 
 
 class AccessRestricted(Exception):
@@ -97,6 +98,15 @@ def _explicit_skills(lines: list[str]) -> list[str]:
     return skills
 
 
+def _deadline_from_text(text: str) -> date | None:
+    for match in DEADLINE_PATTERN.finditer(text):
+        try:
+            return date.fromisoformat(match.group(1))
+        except ValueError:
+            continue
+    return None
+
+
 def parse_detail(html: str, url: str) -> Job:
     result = canonical_detail_url(url)
     if result is None:
@@ -146,13 +156,30 @@ def parse_detail(html: str, url: str) -> Job:
     duration = duration_match.group(1).replace(" ", "") if duration_match else None
 
     application = ""
-    for section in soup.select(".content_left .con-job"):
-        text = section.get_text(" ", strip=True)
-        if text.startswith("投递要求"):
-            application = text
-            break
-    deadline_match = re.search(r"截止日期[:：]\s*(\d{4}-\d{2}-\d{2})", application)
-    deadline = deadline_match.group(1) if deadline_match else None
+    deadline = None
+    for heading in soup.select(".job_til"):
+        if "投递要求" in heading.get_text(" ", strip=True):
+            section = heading.find_parent(class_="con-job")
+            if section:
+                application = section.get_text(" ", strip=True)
+                deadline = _deadline_from_text(application)
+                break
+    if deadline is None:
+        for container in soup.select(".content_left, .job-header"):
+            deadline = _deadline_from_text(container.get_text(" ", strip=True))
+            if deadline is not None:
+                break
+    if deadline is not None and deadline.isoformat() not in application:
+        application = "\n".join(part for part in (application, f"截止日期：{deadline.isoformat()}") if part)
+
+    refreshed_text = ""
+    refresh_node = soup.select_one(".job-header .job_date")
+    if refresh_node:
+        candidate = refresh_node.get_text(" ", strip=True)
+        if "刷新" in candidate:
+            refresh_match = re.search(r"\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?", candidate)
+            if refresh_match:
+                refreshed_text = refresh_match.group(0)
 
     address_node = soup.select_one(".job_city .com_position")
     address = address_node.get_text(" ", strip=True) if address_node else ""
@@ -162,6 +189,7 @@ def parse_detail(html: str, url: str) -> Job:
 
     relevant_text = "\n".join(part for part in (
         title, company, location, academic, week_text, duration_text,
+        f"{refreshed_text} 刷新" if refreshed_text else "",
         "职位描述：", *body_lines, application,
         f"工作地点：{address}" if address else "", offline, action if is_active is True else "",
     ) if part)
@@ -179,6 +207,7 @@ def parse_detail(html: str, url: str) -> Job:
         required_skills=_explicit_skills(requirements),
         internship_days_per_week=days, internship_duration=duration,
         deadline=deadline, published_at=None, collected_at=datetime.now().astimezone(),
+        refreshed_at=refreshed_text or None,
         raw_text=relevant_text, is_active=is_active,
     )
 

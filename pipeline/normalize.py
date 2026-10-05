@@ -131,6 +131,19 @@ def normalize_job(job: Job) -> Job:
             quality.append(f"{field_name}无法解析：{original}")
             return None
 
+    def safe_refreshed_at(value: datetime | str | None) -> datetime | None:
+        if value is None or value == "":
+            return None
+        original = value.strftime("%Y-%m-%d %H:%M:%S") if isinstance(value, datetime) else clean_text(value)
+        if original not in raw_text or "刷新" not in raw_text:
+            quality.append(f"刷新时间缺少原文依据：{original}")
+            return None
+        try:
+            return normalize_datetime(value)
+        except (ValueError, TypeError):
+            quality.append(f"刷新时间无法解析：{original}")
+            return None
+
     try:
         source_url = normalize_url(job.source_url)
     except (ValueError, TypeError) as exc:
@@ -171,6 +184,7 @@ def normalize_job(job: Job) -> Job:
         internship_duration=supported(job.internship_duration, "实习时长"),
         deadline=safe_date(job.deadline, "截止日期"),
         published_at=safe_date(job.published_at, "发布日期"),
+        refreshed_at=safe_refreshed_at(job.refreshed_at),
         collected_at=collected_at, source_type=source_type, direction=direction,
         is_active=is_active,
         business_tags=business_tags, task_tags=task_tags,
@@ -187,6 +201,7 @@ def normalize_job(job: Job) -> Job:
             ("每周天数", result.internship_days_per_week is None),
             ("实习时长", result.internship_duration is None),
             ("截止日期", result.deadline is None), ("发布日期", result.published_at is None),
+            ("页面刷新时间", result.refreshed_at is None),
             ("导师安排", result.mentor is None), ("留用机会", result.retention is None),
             ("业务方向", not result.business_tags and not result.direction),
             ("岗位任务", not result.task_tags),

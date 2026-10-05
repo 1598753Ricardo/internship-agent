@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from collectors.mock_collector import MockCollector
+from main import print_field_coverage
 from pipeline.deduplicate import deduplicate_jobs
 from pipeline.filter import filter_jobs
 from pipeline.normalize import normalize_jobs
@@ -27,6 +28,20 @@ def test_expired_job_is_filtered():
 
 def test_explicit_major_mismatch_is_filtered():
     assert "unrelated" not in {job.id for job in filter_jobs(jobs(), profile())}
+
+
+def test_hard_reject_reason_counts():
+    counts = {}
+    accepted = filter_jobs(jobs(), profile(), today=date(2026, 10, 5), rejection_counts=counts)
+    assert counts["expired"] >= 1
+    assert counts["major_mismatch"] >= 1
+    assert sum(counts.values()) + len(accepted) == len(jobs())
+
+
+def test_field_coverage_counts_unknown_boolean_as_missing(capsys):
+    original = jobs()[0]
+    print_field_coverage([replace(original, remote=True), replace(original, remote=None)])
+    assert "[field coverage] remote: 1/2 (50.0%)" in capsys.readouterr().out
 
 
 def test_similar_spelling_does_not_count_as_same_major():

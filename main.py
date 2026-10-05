@@ -13,6 +13,20 @@ from reports.generator import generate_report
 
 
 ROOT = Path(__file__).resolve().parent
+FIELD_COVERAGE = (
+    ("title", "title"), ("company", "company"), ("location", "location"),
+    ("education", "education"), ("days_per_week", "internship_days_per_week"),
+    ("duration", "internship_duration"), ("deadline", "deadline"),
+    ("remote", "remote"), ("is_active", "is_active"),
+)
+
+
+def print_field_coverage(jobs: list) -> None:
+    total = len(jobs)
+    for label, attr in FIELD_COVERAGE:
+        known = sum(getattr(job, attr) is not None and getattr(job, attr) != "" for job in jobs)
+        percentage = 100 * known / total if total else 0.0
+        print(f"[field coverage] {label}: {known}/{total} ({percentage:.1f}%)")
 
 
 def load_profile() -> dict:
@@ -61,12 +75,17 @@ def main() -> None:
 
     jobs = normalize_jobs(jobs)
     print(f"[normalize] {len(jobs)} jobs")
+    print_field_coverage(jobs)
 
     jobs = deduplicate_jobs(jobs)
     print(f"[deduplicate] {len(jobs)} jobs")
 
-    jobs = filter_jobs(jobs, profile)
+    rejection_counts = {key: 0 for key in ("expired", "inactive", "major_mismatch", "location_mismatch")}
+    jobs = filter_jobs(jobs, profile, rejection_counts=rejection_counts)
     print(f"[filter] {len(jobs)} jobs")
+    for reason, count in rejection_counts.items():
+        print(f"[filter] {reason}: {count}")
+    print(f"[filter] accepted: {len(jobs)}")
 
     jobs = rank_jobs(jobs, profile)
     print("[rank] completed")

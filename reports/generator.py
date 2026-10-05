@@ -38,6 +38,7 @@ def generate_report(jobs: list[Job], collected_count: int, output_path: Path) ->
             f"年级要求：{'、'.join(job.required_grades)}" if job.required_grades else None,
             f"技能要求：{'、'.join(job.required_skills)}" if job.required_skills else None,
             f"截止日期：{job.deadline.isoformat()}" if job.deadline else None,
+            f"页面刷新时间：{job.refreshed_at:%Y-%m-%d}" if job.refreshed_at else None,
             f"导师安排：{job.mentor}" if job.mentor else None,
             f"留用机会：{job.retention}" if job.retention else None,
             f"业务标签：{'、'.join(job.business_tags)}" if job.business_tags else None,

@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,7 @@ def test_normal_bachelor_legal_posting_uses_detail_evidence():
     assert job.required_skills == ["CET-6"] and job.is_active is True
     assert job.deadline.isoformat() == "2026-12-31"
     assert job.published_at is None  # The page's date is labelled "refreshed".
+    assert job.refreshed_at == datetime(2026, 10, 5)
     assert job.source == "shixiseng" and job.source_type == "job_platform"
     assert "职位百科" not in job.raw_text and "导师很好" not in job.raw_text
     assert "相关推荐" not in job.raw_text
@@ -140,3 +142,40 @@ def test_verification_page_stops_collection(monkeypatch):
     collector = ShixisengCollector(max_jobs=10, http=ChallengeHttp())
     assert collector.collect() == []
     assert "verification page" in collector.blocked_reason
+
+
+def test_real_structure_deadline_is_parsed_and_expired():
+    parsed = parse_detail(html("deadline_real_structure"), url("deadline123"))
+    assert parsed.deadline == date(2026, 9, 30)
+    job = normalize_jobs([parsed])[0]
+    assert job.refreshed_at == datetime(2023, 9, 24, 9, 38, 32)
+    counts = {}
+    assert filter_jobs([job], profile(), today=date(2026, 10, 5), rejection_counts=counts) == []
+    assert counts == {"expired": 1}
+
+
+def test_future_deadline_is_retained_with_staleness_warning():
+    page = html("deadline_real_structure").replace("2026-09-30", "2026-10-20")
+    job = normalize_jobs([parse_detail(page, url("future123"))])[0]
+    accepted = filter_jobs([job], profile(), today=date(2026, 10, 5))
+    assert len(accepted) == 1
+    assert accepted[0].deadline == date(2026, 10, 20)
+    assert "页面刷新时间较早，需确认岗位是否仍有效" in accepted[0].risk_reasons
+
+
+def test_deadline_fallback_searches_recruitment_text():
+    page = html("deadline_real_structure").replace(
+        '<div class="con-job"><div class="job_til">投递要求：</div><div>简历要求：不限</div><div class="cutom_font">截止日期：2026-09-30</div></div>',
+        '<div class="apply-meta">截止日期：2026-09-30</div>',
+    )
+    assert parse_detail(page, url("fallback123")).deadline == date(2026, 9, 30)
+
+
+@pytest.mark.parametrize("marker", ["当前职位已下线", "该职位已下线", "职位已下线"])
+def test_offline_marker_wins_over_apply_button(marker):
+    page = html("deadline_real_structure").replace("<aside>", f"<div>{marker}</div><aside>")
+    job = normalize_jobs([parse_detail(page, url("offlineprecedence123"))])[0]
+    assert job.is_active is False
+    counts = {}
+    assert filter_jobs([job], profile(), today=date(2026, 10, 5), rejection_counts=counts) == []
+    assert counts == {"inactive": 1}
