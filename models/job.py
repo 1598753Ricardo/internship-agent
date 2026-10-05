@@ -46,6 +46,12 @@ class Job:
     convenience_score: int = 0
     content_score: int = 0
     match_score: int = 0
+    base_match_score: int = 0
+    freshness_status: str = "unknown"
+    freshness_adjustment: int = 0
+    discovery_status: str = "new"
+    changes: list[str] = field(default_factory=list)
+    schedule_conflict: bool = False
     recommendation: str = ""
     match_reasons: list[str] = field(default_factory=list)
     risk_reasons: list[str] = field(default_factory=list)

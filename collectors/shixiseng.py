@@ -1,11 +1,13 @@
 """Low-rate collection of public Shixiseng search and detail pages."""
 
 import itertools
+import json
 import random
 import re
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -18,7 +20,7 @@ from models.job import Job
 BASE_URL = "https://www.shixiseng.com"
 SEARCH_URL = f"{BASE_URL}/interns"
 DETAIL_PATH = re.compile(r"^/intern/(inn_[a-zA-Z0-9]+)$")
-USER_AGENT = "InternshipAgent/0.3 (+https://github.com/1598753Ricardo/internship-agent)"
+USER_AGENT = "InternshipAgent/0.4 (+https://github.com/1598753Ricardo/internship-agent)"
 KEYWORDS = ("法务", "律师", "合规")
 CITIES = ("东莞", "广州", "深圳")
 EDUCATION = {"本科", "本科及以上", "硕士", "硕士及以上", "不限"}
@@ -52,6 +54,11 @@ def discover_detail_urls(html: str) -> list[str]:
             seen.add(result[0])
             urls.append(result[0])
     return urls
+
+
+def has_next_page(html: str) -> bool:
+    button = BeautifulSoup(html, "html.parser").select_one(".el-pagination .btn-next")
+    return bool(button and not button.has_attr("disabled"))
 
 
 def _lines(element) -> list[str]:
@@ -213,12 +220,14 @@ def parse_detail(html: str, url: str) -> Job:
 
 
 class ShixisengCollector(BaseCollector):
-    def __init__(self, max_jobs: int = 30, http=None):
-        if max_jobs < 1:
-            raise ValueError("max_jobs must be positive")
+    def __init__(self, max_jobs: int = 30, pages: int = 1, http=None, cache_dir: Path | None = None):
+        if max_jobs < 1 or pages not in (1, 2):
+            raise ValueError("max_jobs must be positive and pages must be 1 or 2")
         self.max_jobs = max_jobs
+        self.pages = pages
         self.http = http or requests
-        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0}
+        self.cache_dir = cache_dir
+        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "cache_hits": 0}
         self.blocked_reason: str | None = None
         self._last_request_at: float | None = None
 
@@ -248,23 +257,54 @@ class ShixisengCollector(BaseCollector):
             raise AccessRestricted(f"verification page at {url}")
         return html
 
+    def _cached_html(self, source_job_id: str) -> str | None:
+        if self.cache_dir is None:
+            return None
+        path = self.cache_dir / f"{source_job_id}.json"
+        try:
+            cached = json.loads(path.read_text(encoding="utf-8"))
+            checked = datetime.fromisoformat(cached["last_checked"])
+            if checked.tzinfo is not None and datetime.now(timezone.utc) - checked < timedelta(hours=24):
+                return cached["html"]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return None
+
+    def _save_cache(self, source_job_id: str, html: str) -> None:
+        if self.cache_dir is None:
+            return
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            path = self.cache_dir / f"{source_job_id}.json"
+            path.write_text(json.dumps({"last_checked": datetime.now(timezone.utc).isoformat(), "html": html}, ensure_ascii=False), encoding="utf-8")
+        except OSError as exc:
+            print(f"[warning] shixiseng cache write failed: {source_job_id}: {exc}", file=sys.stderr)
+
     def collect(self) -> list[Job]:
-        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0}
+        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "cache_hits": 0}
         self.blocked_reason = None
         buckets: list[list[str]] = []
         for keyword in KEYWORDS:
             for city in CITIES:
-                try:
-                    html = self._request(SEARCH_URL, {"keyword": keyword, "city": city, "type": "intern"})
-                    buckets.append(discover_detail_urls(html))
-                except AccessRestricted as exc:
-                    self.blocked_reason = str(exc)
-                    print(f"[warning] shixiseng access restricted: {exc}", file=sys.stderr)
-                    self._print_stats()
-                    return []
-                except (requests.RequestException, ValueError) as exc:
-                    print(f"[warning] shixiseng search failed: {keyword}/{city}: {exc}", file=sys.stderr)
-                    buckets.append([])
+                found: list[str] = []
+                for page in range(1, self.pages + 1):
+                    params = {"keyword": keyword, "city": city, "type": "intern"}
+                    if page > 1:
+                        params["page"] = page
+                    try:
+                        html = self._request(SEARCH_URL, params)
+                        found.extend(discover_detail_urls(html))
+                    except AccessRestricted as exc:
+                        self.blocked_reason = str(exc)
+                        print(f"[warning] shixiseng access restricted: {exc}", file=sys.stderr)
+                        self._print_stats()
+                        return []
+                    except (requests.RequestException, ValueError) as exc:
+                        print(f"[warning] shixiseng search failed: {keyword}/{city}/page {page}: {exc}", file=sys.stderr)
+                        break
+                    if not has_next_page(html):
+                        break
+                buckets.append(found)
 
         discovered: list[str] = []
         seen: set[str] = set()
@@ -279,8 +319,19 @@ class ShixisengCollector(BaseCollector):
         for url in discovered[:self.max_jobs]:
             self.stats["fetched"] += 1
             try:
-                html = self._request(url)
-                job = parse_detail(html, url)
+                source_job_id = canonical_detail_url(url)[1]
+                html = self._cached_html(source_job_id)
+                if html is not None:
+                    try:
+                        job = parse_detail(html, url)
+                    except ValueError:
+                        html = None
+                    else:
+                        self.stats["cache_hits"] += 1
+                if html is None:
+                    html = self._request(url)
+                    job = parse_detail(html, url)
+                    self._save_cache(source_job_id, html)
             except AccessRestricted as exc:
                 self.stats["failed"] += 1
                 self.blocked_reason = str(exc)

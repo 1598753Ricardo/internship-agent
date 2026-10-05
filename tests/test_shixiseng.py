@@ -109,7 +109,7 @@ def test_one_parse_failure_does_not_stop_later_job(monkeypatch, capsys):
 
     collector = ShixisengCollector(max_jobs=10, http=FakeHttp())
     jobs = collector.collect()
-    assert collector.stats == {"discovered": 2, "fetched": 2, "parsed": 1, "failed": 1}
+    assert collector.stats == {"discovered": 2, "fetched": 2, "parsed": 1, "failed": 1, "cache_hits": 0}
     assert len(jobs) == 1 and jobs[0].source_url == url("good123")
     assert jobs[0].internship_days_per_week == 2  # Search card said 5; detail said 2.
     assert f"[warning] shixiseng parse failed: {url('bad123')}" in capsys.readouterr().err

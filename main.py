@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -6,6 +7,7 @@ import yaml
 from collectors.mock_collector import MockCollector
 from collectors.shixiseng import ShixisengCollector
 from pipeline.deduplicate import deduplicate_jobs
+from pipeline.discovery import classify_jobs, load_state, save_state
 from pipeline.filter import filter_jobs
 from pipeline.normalize import normalize_jobs
 from pipeline.rank import rank_jobs
@@ -65,10 +67,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate an internship recommendation report")
     parser.add_argument("--source", choices=("shixiseng", "mock"), default="shixiseng")
     parser.add_argument("--max-jobs", type=int, default=30, help="Maximum Shixiseng detail pages to fetch")
+    parser.add_argument("--pages", type=int, default=1, help="Maximum public search pages per keyword/city")
     args = parser.parse_args()
 
     profile = load_profile()
-    collector = MockCollector() if args.source == "mock" else ShixisengCollector(max_jobs=args.max_jobs)
+    collector = MockCollector() if args.source == "mock" else ShixisengCollector(
+        max_jobs=args.max_jobs, pages=args.pages, cache_dir=ROOT / "data" / "cache" / "shixiseng",
+    )
     jobs = collector.collect()
     collected_count = len(jobs)
     print(f"[collect] {collected_count} jobs")
@@ -80,17 +85,30 @@ def main() -> None:
     jobs = deduplicate_jobs(jobs)
     print(f"[deduplicate] {len(jobs)} jobs")
 
+    now = datetime.now().astimezone()
+    jobs = rank_jobs(jobs, profile, today=now.date())
+    print("[rank] completed")
+    state_path = ROOT / "data" / "state" / "jobs.json"
+    state = load_state(state_path) if args.source == "shixiseng" else {"version": 1, "jobs": {}}
+    jobs, next_state = classify_jobs(jobs, state, now)
+    for status in ("new", "updated", "seen"):
+        print(f"[discovery] {status}: {sum(job.discovery_status == status for job in jobs)}")
+
     rejection_counts = {key: 0 for key in ("expired", "inactive", "major_mismatch", "location_mismatch")}
-    jobs = filter_jobs(jobs, profile, rejection_counts=rejection_counts)
-    print(f"[filter] {len(jobs)} jobs")
+    accepted = filter_jobs(jobs, profile, today=now.date(), rejection_counts=rejection_counts)
+    print(f"[filter] {len(accepted)} jobs")
     for reason, count in rejection_counts.items():
         print(f"[filter] {reason}: {count}")
-    print(f"[filter] accepted: {len(jobs)}")
+    print(f"[filter] accepted: {len(accepted)}")
+    print(f"[discovery] schedule_conflict: {sum(job.schedule_conflict for job in accepted)}")
 
-    jobs = rank_jobs(jobs, profile)
-    print("[rank] completed")
-
-    report_path = generate_report(jobs, collected_count=collected_count, output_path=ROOT / "data" / "daily_report.md")
+    report_path = generate_report(
+        accepted, collected_count=collected_count, output_path=ROOT / "data" / "daily_report.md",
+        updated_jobs=[job for job in jobs if job.discovery_status == "updated"],
+        tracked_total=len(next_state["jobs"]),
+    )
+    if args.source == "shixiseng":
+        save_state(state_path, next_state)
     print(f"[report] {report_path.relative_to(ROOT).as_posix()}")
 
 

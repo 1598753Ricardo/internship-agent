@@ -1,16 +1,22 @@
 """Transparent four-part scoring. Unknown facts receive neutral points, not claims."""
 
 from dataclasses import replace
+from datetime import date, datetime
 
 from models.job import Job
 from pipeline.normalize import normalize_city
 
 
-POSITIVE_TASKS = {
-    "法律检索", "合同审查", "文书起草", "尽职调查", "法规研究",
-    "仲裁", "诉讼", "英文法律工作",
-}
+CONTENT_GROUPS = (
+    {"法律研究", "法律检索", "法规研究"},
+    {"文书起草", "合同起草"},
+    {"合同审查"},
+    {"尽职调查"},
+    {"仲裁", "诉讼", "案件支持"},
+    {"英文法律工作"},
+)
 NEGATIVE_TASKS = {"纯行政", "纯文员", "扫描", "装订", "跑腿", "客服", "销售"}
+FRESHNESS_ADJUSTMENTS = {"fresh": 0, "recent": 0, "stale": -3, "very_stale": -8, "unknown": -2}
 
 
 def recommendation_for(score: int) -> str:
@@ -23,7 +29,8 @@ def recommendation_for(score: int) -> str:
     return "不推荐"
 
 
-def score_job(job: Job, profile: dict) -> Job:
+def score_job(job: Job, profile: dict, today: date | None = None) -> Job:
+    today = today or date.today()
     reasons: list[str] = []
     risks = list(job.risk_reasons)
     education = profile["education"]
@@ -75,8 +82,10 @@ def score_job(job: Job, profile: dict) -> Job:
     directions = set(job.business_tags)
     if job.direction:
         directions.add(job.direction)
-    high = directions & set(profile["preferred_directions"]["high"])
-    medium = directions & set(profile["preferred_directions"]["medium"])
+    aliases = {"商事诉讼": "商事争议"}
+    directions = {aliases.get(item, item) for item in directions}
+    high = directions & {aliases.get(item, item) for item in profile["preferred_directions"]["high"]}
+    medium = directions & {aliases.get(item, item) for item in profile["preferred_directions"]["medium"]}
     if high:
         direction = 25
         reasons.append("高度偏好方向：" + "、".join(sorted(high)))
@@ -121,10 +130,11 @@ def score_job(job: Job, profile: dict) -> Job:
         schedule_points = 0
     convenience = 0 if days is not None and days > max_days else location_points + schedule_points
 
-    # Content: four positive tasks fill 20 points; explicit low-value tasks reduce it.
-    positive = sorted(set(job.task_tags) & POSITIVE_TASKS)
+    # Each kind of legal work counts once, even when several synonyms are present.
+    positive = sorted(set(job.task_tags) & set().union(*CONTENT_GROUPS))
     negative = sorted(set(job.task_tags) & NEGATIVE_TASKS)
-    content = min(20, 5 * len(positive)) if job.task_tags else 10
+    distinct_work = sum(bool(group & set(positive)) for group in CONTENT_GROUPS)
+    content = min(20, 10 + 2 * distinct_work + (1 if "客户沟通" in job.task_tags else 0))
     avoid = set(profile["preferences"]["avoid"])
     for tag in negative:
         content -= 12 if tag in avoid or (tag == "销售" and "纯销售" in avoid) else 8
@@ -134,17 +144,27 @@ def score_job(job: Job, profile: dict) -> Job:
     if negative:
         risks.append("包含需注意的任务：" + "、".join(negative))
 
-    total = eligibility + direction + convenience + content
+    base = eligibility + direction + convenience + content
+    if not isinstance(job.refreshed_at, datetime):
+        freshness = "unknown"
+    else:
+        age = (today - job.refreshed_at.date()).days
+        freshness = "fresh" if age <= 30 else "recent" if age <= 90 else "stale" if age <= 180 else "very_stale"
+    adjustment = FRESHNESS_ADJUSTMENTS[freshness]
+    total = max(0, min(100, base + adjustment))
+    schedule_conflict = bool(days is not None and days > max_days and direction >= 17 and content >= 10)
     return replace(
         job, eligibility_score=eligibility, direction_score=direction,
         convenience_score=convenience, content_score=content,
+        base_match_score=base, freshness_status=freshness,
+        freshness_adjustment=adjustment, schedule_conflict=schedule_conflict,
         match_score=total, recommendation=recommendation_for(total),
         match_reasons=reasons, risk_reasons=risks,
     )
 
 
-def rank_jobs(jobs: list[Job], profile: dict) -> list[Job]:
+def rank_jobs(jobs: list[Job], profile: dict, today: date | None = None) -> list[Job]:
     return sorted(
-        (score_job(job, profile) for job in jobs),
+        (score_job(job, profile, today=today) for job in jobs),
         key=lambda job: (-job.match_score, job.company, job.title),
     )
