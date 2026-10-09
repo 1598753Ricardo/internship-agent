@@ -1,6 +1,6 @@
 """Daily discovery report with evidence and explicit uncertainty."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from models.job import Job
@@ -61,8 +61,9 @@ def _job_lines(job: Job, index: int) -> list[str]:
 def generate_report(
     jobs: list[Job], collected_count: int, output_path: Path,
     updated_jobs: list[Job] | None = None, tracked_total: int | None = None,
+    collection_status: str = "success",
 ) -> Path:
-    now = datetime.now().astimezone()
+    now = datetime.now(timezone(timedelta(hours=8)))
     ordered = sorted(jobs, key=lambda item: (-item.match_score, item.company, item.title))
     new = [job for job in ordered if job.discovery_status == "new"]
     updated = sorted(
@@ -76,11 +77,20 @@ def generate_report(
     lines = [
         "# 今日实习机会", "",
         f"生成时间：{now:%Y-%m-%d %H:%M %Z}", "",
+        f"采集状态：{collection_status}",
         f"共抓取：{collected_count}", f"过滤后：{len(jobs)}", f"推荐：{recommended}", "",
     ]
+    if collection_status in {"blocked", "failed"}:
+        lines.extend(["**今日采集失败或被限制，不能判断是否有新岗位。**", ""])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("\n".join(lines), encoding="utf-8")
+        return output_path
+    if collection_status == "partial":
+        lines.extend(["**部分岗位采集失败，以下结果可能不完整。**", ""])
+    uncertain = collection_status == "partial"
     sections = (
-        ("今日新发现", new, "今天没有新发现的符合条件岗位。"),
-        ("岗位发生变化", updated, "今天没有检测到岗位变化。"),
+        ("今日新发现", new, "本次采集不完整，无法判断是否有新岗位。" if uncertain else "今天没有新发现的符合条件岗位。"),
+        ("岗位发生变化", updated, "本次采集不完整，无法判断是否有岗位变化。" if uncertain else "今天没有检测到岗位变化。"),
         ("今日最值得看", top, "暂无明确可投递的岗位。"),
         ("时间不合适但值得关注", conflicts, "暂无符合这一条件的岗位。"),
     )

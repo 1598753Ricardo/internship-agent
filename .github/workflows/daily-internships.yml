@@ -1,0 +1,85 @@
+name: Internship Agent Daily
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+      timezone: "Asia/Shanghai"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: internship-agent-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare local data directories
+        run: mkdir -p data/state data/cache
+
+      - name: Restore job state and detail cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/state/
+            data/cache/
+          key: internship-agent-data-v1-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            internship-agent-data-v1-${{ github.ref_name }}-
+
+      - name: Create private profile
+        id: profile
+        env:
+          PROFILE_YAML: ${{ secrets.PROFILE_YAML }}
+        run: python -m automation.github_actions write-profile
+
+      - name: Collect and generate daily report
+        id: pipeline
+        run: python main.py
+
+      - name: Write Actions Summary
+        if: always()
+        run: python -m automation.github_actions summary
+
+      - name: Save updated job state and detail cache
+        if: always() && steps.profile.outcome == 'success' && steps.pipeline.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/state/
+            data/cache/
+          key: internship-agent-data-v1-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload full daily report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: internship-report-${{ github.run_id }}
+          path: |
+            data/daily_report.md
+            data/run_summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify fixed daily Issue
+        if: steps.pipeline.outcome == 'success'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m automation.github_actions notify

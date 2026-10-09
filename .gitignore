@@ -6,6 +6,7 @@ pytest-cache-files-*/
 .env
 config/profile.yaml
 data/daily_report.md
+data/run_summary.json
 data/state/jobs.json
 data/cache/shixiseng/
 data/.pytest_tmp/

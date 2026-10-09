@@ -227,7 +227,7 @@ class ShixisengCollector(BaseCollector):
         self.pages = pages
         self.http = http or requests
         self.cache_dir = cache_dir
-        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "cache_hits": 0}
+        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "search_failed": 0, "cache_hits": 0}
         self.blocked_reason: str | None = None
         self._last_request_at: float | None = None
 
@@ -281,7 +281,7 @@ class ShixisengCollector(BaseCollector):
             print(f"[warning] shixiseng cache write failed: {source_job_id}: {exc}", file=sys.stderr)
 
     def collect(self) -> list[Job]:
-        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "cache_hits": 0}
+        self.stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "search_failed": 0, "cache_hits": 0}
         self.blocked_reason = None
         buckets: list[list[str]] = []
         for keyword in KEYWORDS:
@@ -300,6 +300,7 @@ class ShixisengCollector(BaseCollector):
                         self._print_stats()
                         return []
                     except (requests.RequestException, ValueError) as exc:
+                        self.stats["search_failed"] += 1
                         print(f"[warning] shixiseng search failed: {keyword}/{city}/page {page}: {exc}", file=sys.stderr)
                         break
                     if not has_next_page(html):

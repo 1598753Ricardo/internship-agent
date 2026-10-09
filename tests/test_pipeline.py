@@ -32,7 +32,7 @@ def test_explicit_major_mismatch_is_filtered():
 
 def test_hard_reject_reason_counts():
     counts = {}
-    accepted = filter_jobs(jobs(), profile(), today=date(2026, 10, 5), rejection_counts=counts)
+    accepted = filter_jobs(jobs(), profile(), today=date.today(), rejection_counts=counts)
     assert counts["expired"] >= 1
     assert counts["major_mismatch"] >= 1
     assert sum(counts.values()) + len(accepted) == len(jobs())

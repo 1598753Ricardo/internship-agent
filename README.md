@@ -1,6 +1,6 @@
 # Internship Agent
 
-Internship Agent 是一个本地运行的实习岗位推荐 MVP。v0.4 默认读取实习僧公开岗位页面，记录跨运行的新岗位与岗位变化，并生成 Markdown 日报。模拟岗位仍可用于离线测试。
+Internship Agent 是一个实习岗位推荐 MVP。v0.5 可在本地或 GitHub Actions 中运行，每天读取实习僧公开岗位页面，识别新岗位与变化，并生成 Markdown 日报。模拟岗位仍可用于离线测试。
 
 ## 项目结构
 
@@ -34,6 +34,14 @@ python main.py --source mock
 实习僧采集器只请求“法务、律师、合规”与“东莞、广州、深圳”的搜索组合，默认各一页。`--pages 2` 最多读取两页，只有公开搜索页显示有下一页时才继续；`page=2` 已通过公开页面结果验证。搜索页只发现岗位链接；标题、公司、每周天数等字段都从详情页读取。请求间隔至少约一秒，遇到 403、429、验证页或重定向会停止，不会登录、携带手工 Cookie 或绕过限制。搜索页显示“最新”和“一月内”选项，但公开 HTML 没有给出可核实的 URL 或表单参数，所以目前仍使用默认排序。
 
 搜索页每次都重新请求。成功解析的详情页在 `data/cache/shixiseng/` 中缓存 24 小时，过期后重新请求；运行统计中的 `cache_hits` 表示复用数量。`data/state/jobs.json` 按来源岗位 ID（缺失时按规范化链接）记录首次发现、最近发现、招聘内容摘要与最近分数。首次运行会把当前岗位标为 `new`，后续相同内容为 `seen`，关键字段或正文变化为 `updated`。状态文件损坏时程序会明确报错，以免误覆盖已有记录。
+
+## GitHub Actions 每日自动运行
+
+仓库的 `.github/workflows/daily-internships.yml` 支持手动运行，并按 `Asia/Shanghai` 每天 12:00 自动运行。先到仓库 **Settings → Secrets and variables → Actions → New repository secret**，新建名为 `PROFILE_YAML` 的 Repository Secret，内容填写完整的个人 `config/profile.yaml` YAML 文本。真实 `profile.yaml` 仍被 Git 忽略，不要提交。若未设置该 Secret，工作流会在创建配置时明确失败，且不会把 Secret 内容打印到日志。
+
+完成设置后，打开 **Actions → Internship Agent Daily → Run workflow**，选择 `main` 并手动运行一次。运行结果可在该次运行的 **Summary** 查看；有新岗位或岗位更新时，会在固定的 **Internship Agent Daily** Issue 中新增一条摘要评论。没有变化时不评论。完整的 `daily_report.md` 和 `run_summary.json` 可从该次运行的 Artifact 下载。
+
+工作流每次仍重新请求搜索页，通过 Actions Cache 恢复和保存 `data/state/`、`data/cache/`。首次没有缓存是正常情况，岗位会被标记为 `new`；下次状态成功恢复且岗位内容不变时，它们会变成 `seen`。Actions Cache 是 MVP 状态存储，不是永久数据库；缓存被清理、保存失败或手动从另一分支运行时，可能重新出现大量 `new`。公开仓库长期无活动时，GitHub 也可能暂停定时工作流。Issue 通知失败不会中断日报和 Artifact；采集被 403、429 或验证码阻止时，Summary 与 `run_summary.json` 会标记 `blocked`，运行会失败，不能据此判断“今天没有新岗位”。
 
 ## 当前规则
 
