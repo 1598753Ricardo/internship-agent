@@ -9,6 +9,7 @@ import yaml
 
 import main as app_main
 from automation.github_actions import ISSUE_TITLE, notify_issue, write_profile
+from collectors.mock_collector import MockCollector
 from collectors.shixiseng import parse_detail
 from pipeline.discovery import classify_jobs
 from pipeline.normalize import normalize_jobs
@@ -168,36 +169,30 @@ def test_issue_notification_creates_fixed_issue_if_missing():
     assert fake.calls[2][1].endswith("/issues/8/comments")
 
 
-def test_blocked_main_writes_failure_summary_and_report(monkeypatch):
-    root = Path("data/.pytest_tmp/blocked_run")
+def test_blocked_main_writes_failure_summary_and_report(monkeypatch, tmp_path):
+    root = tmp_path
 
     class BlockedCollector:
         blocked_reason = "HTTP 429 at public search page"
         stats = {"discovered": 0, "fetched": 0, "parsed": 0, "failed": 0, "search_failed": 0}
 
         def collect(self):
-            return []
+            return [MockCollector().collect()[0]]
 
     monkeypatch.setattr(app_main, "ROOT", root)
     monkeypatch.setattr(app_main, "load_profile", profile)
     monkeypatch.setattr(app_main, "ShixisengCollector", lambda **kwargs: BlockedCollector())
     monkeypatch.setattr(sys, "argv", ["main.py"])
-    try:
-        with pytest.raises(SystemExit) as result:
-            app_main.main()
-        summary = json.loads((root / "data/run_summary.json").read_text(encoding="utf-8"))
-        report = (root / "data/daily_report.md").read_text(encoding="utf-8")
-    finally:
-        (root / "data/run_summary.json").unlink(missing_ok=True)
-        (root / "data/daily_report.md").unlink(missing_ok=True)
-        if (root / "data").exists():
-            (root / "data").rmdir()
-        if root.exists():
-            root.rmdir()
+    with pytest.raises(SystemExit) as result:
+        app_main.main()
+    summary = json.loads((root / "data/run_summary.json").read_text(encoding="utf-8"))
+    report = (root / "data/daily_report.md").read_text(encoding="utf-8")
+    jobs = json.loads((root / "data/output/jobs.json").read_text(encoding="utf-8"))
     assert result.value.code == 1
     assert summary["collection_status"] == "blocked"
     assert "今日采集失败或被限制" in report
     assert "今天没有新发现" not in report
+    assert jobs == []
 
 
 def test_workflow_has_schedule_secret_cache_artifact_and_issue_permissions():
@@ -210,6 +205,8 @@ def test_workflow_has_schedule_secret_cache_artifact_and_issue_permissions():
     uses = [step.get("uses", "") for step in steps]
     assert "actions/cache/restore@v4" in uses and "actions/cache/save@v4" in uses
     assert "actions/upload-artifact@v4" in uses
+    artifact = next(step for step in steps if step.get("uses") == "actions/upload-artifact@v4")
+    assert "data/output/jobs.json" in artifact["with"]["path"]
     assert any(step.get("env", {}).get("PROFILE_YAML") == "${{ secrets.PROFILE_YAML }}" for step in steps)
     assert any(step.get("continue-on-error") == "true" and "notify" in step.get("run", "") for step in steps)
     cache_steps = [step for step in steps if step.get("uses", "").startswith("actions/cache/")]

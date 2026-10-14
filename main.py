@@ -13,6 +13,7 @@ from pipeline.filter import filter_jobs
 from pipeline.normalize import normalize_jobs
 from pipeline.rank import rank_jobs
 from reports.generator import generate_report
+from reports.jobs_json import write_jobs_json
 from reports.summary import build_run_summary, collection_status, write_run_summary
 
 
@@ -133,9 +134,14 @@ def main() -> None:
         tracked_total=len(next_state["jobs"]),
         collection_status=status,
     )
+    jobs_json_path = write_jobs_json(
+        ROOT / "data" / "output" / "jobs.json",
+        accepted if status in {"success", "partial"} else [],
+    )
     if args.source == "shixiseng" and status in {"success", "partial"}:
         save_state(state_path, next_state)
     print(f"[report] {report_path.relative_to(ROOT).as_posix()}")
+    print(f"[json] {jobs_json_path.relative_to(ROOT).as_posix()}")
     if status in {"blocked", "failed"}:
         raise SystemExit(1)
 

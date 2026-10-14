@@ -74,6 +74,7 @@ jobs:
           path: |
             data/daily_report.md
             data/run_summary.json
+            data/output/jobs.json
           if-no-files-found: warn
           retention-days: 30
 

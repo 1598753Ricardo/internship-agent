@@ -21,7 +21,7 @@ cp config/profile.example.yaml config/profile.yaml
 python main.py
 ```
 
-Windows PowerShell 可将 `cp` 换成 `Copy-Item`。从 v0.1 升级的用户需要按新示例迁移本地 `config/profile.yaml`；新结构区分首选与可接受地点、强偏好与中等偏好方向。运行后查看 `data/daily_report.md`。测试命令为 `pytest`。
+Windows PowerShell 可将 `cp` 换成 `Copy-Item`。从 v0.1 升级的用户需要按新示例迁移本地 `config/profile.yaml`；新结构区分首选与可接受地点、强偏好与中等偏好方向。运行后查看 `data/daily_report.md` 和供前端读取的 `data/output/jobs.json`。JSON 包含与日报相同的过滤后岗位及现有评分结果；未知远程状态为 `null`，未知截止日期为空字符串。测试命令为 `pytest`。
 
 默认最多请求 30 条详情页。小规模验证或离线模拟可用：
 
@@ -39,7 +39,7 @@ python main.py --source mock
 
 仓库的 `.github/workflows/daily-internships.yml` 支持手动运行，并按 `Asia/Shanghai` 每天 12:00 自动运行。先到仓库 **Settings → Secrets and variables → Actions → New repository secret**，新建名为 `PROFILE_YAML` 的 Repository Secret，内容填写完整的个人 `config/profile.yaml` YAML 文本。真实 `profile.yaml` 仍被 Git 忽略，不要提交。若未设置该 Secret，工作流会在创建配置时明确失败，且不会把 Secret 内容打印到日志。
 
-完成设置后，打开 **Actions → Internship Agent Daily → Run workflow**，选择 `main` 并手动运行一次。运行结果可在该次运行的 **Summary** 查看；有新岗位或岗位更新时，会在固定的 **Internship Agent Daily** Issue 中新增一条摘要评论。没有变化时不评论。完整的 `daily_report.md` 和 `run_summary.json` 可从该次运行的 Artifact 下载。
+完成设置后，打开 **Actions → Internship Agent Daily → Run workflow**，选择 `main` 并手动运行一次。运行结果可在该次运行的 **Summary** 查看；有新岗位或岗位更新时，会在固定的 **Internship Agent Daily** Issue 中新增一条摘要评论。没有变化时不评论。完整的 `daily_report.md`、`run_summary.json` 和 `output/jobs.json` 可从该次运行的 Artifact 下载。
 
 工作流每次仍重新请求搜索页，通过 Actions Cache 恢复和保存 `data/state/`、`data/cache/`。首次没有缓存是正常情况，岗位会被标记为 `new`；下次状态成功恢复且岗位内容不变时，它们会变成 `seen`。Actions Cache 是 MVP 状态存储，不是永久数据库；缓存被清理、保存失败或手动从另一分支运行时，可能重新出现大量 `new`。公开仓库长期无活动时，GitHub 也可能暂停定时工作流。Issue 通知失败不会中断日报和 Artifact；采集被 403、429 或验证码阻止时，Summary 与 `run_summary.json` 会标记 `blocked`，运行会失败，不能据此判断“今天没有新岗位”。
 
